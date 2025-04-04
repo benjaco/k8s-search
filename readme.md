@@ -5,12 +5,13 @@ The **k8s-search** tool allows you to search for specific string patterns within
 Provide the search string using the `--string` flag. For example:
 
 ```bash
-secret_search --string="my-pattern" [--verbose]
+secret_search -string="my-pattern" [-verbose] [-casesensitive]
 ```
 
 The optional `--verbose` flag enables additional logging to help debug or understand the search process.
 
-ADD `-casesensitive` to make the search case sensitive
+Add `-casesensitive` to make the search case sensitive
+
 ---
 
 ## Eg
@@ -18,9 +19,11 @@ ADD `-casesensitive` to make the search case sensitive
 Below is an example of the tool's output when a match is found:
 
 ```
-=== Scanning Kubernetes Secrets and ConfigMaps ===
-Found secret in namespace: default; Secret: my-secret - password : supersecretpassword
-Found config in namespace: production; configKey: apiEndpoint : https://api.example.com
+secret_search -string "postgres"                
+Searching for >>postgres<< (case sensitive: false)
+Found secret in namespace: development-server; Secret: backend-secret - DB_URL : postgresql://user:pass@someurl.com:5432/development?sslmode=require
+Found some results.
+
 ```
 
 ---
