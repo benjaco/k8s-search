@@ -5,11 +5,12 @@ The **k8s-search** tool allows you to search for specific string patterns within
 Provide the search string using the `--string` flag. For example:
 
 ```bash
-secret-search --string="my-pattern" [--verbose]
+secret_search --string="my-pattern" [--verbose]
 ```
 
 The optional `--verbose` flag enables additional logging to help debug or understand the search process.
 
+ADD `-casesensitive` to make the search case sensitive
 ---
 
 ## Eg
@@ -45,6 +46,6 @@ Alternatively, clone the repository and build the tool using Go:
 ```bash
 git clone https://github.com/benjaco/k8s-search.git
 cd k8s-search
-go build -o secret-search .
+go build -o secret_search .
 ```
 
