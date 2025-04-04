@@ -17,40 +17,10 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-// KubernetesSecret represents the structure of a Kubernetes Secret YAML file
-type KubernetesSecret struct {
-	APIVersion string            `yaml:"apiVersion"`
-	Kind       string            `yaml:"kind"`
-	Metadata   Metadata          `yaml:"metadata"`
-	Type       string            `yaml:"type,omitempty"`
-	StringData map[string]string `yaml:"stringData,omitempty"`
-}
-
-// KubernetesConfig represents the structure of a Kubernetes ConfigMap YAML file
-type KubernetesConfig struct {
-	APIVersion string            `yaml:"apiVersion"`
-	Kind       string            `yaml:"kind"`
-	Metadata   Metadata          `yaml:"metadata"`
-	Data       map[string]string `yaml:"data,omitempty"`
-}
-
-// DeployedData represents the structure of a deployed Kubernetes Secret or ConfigMap
-type DeployedData struct {
-	Type      string
-	Name      string
-	Namespace string
-	Data      map[string]string
-}
-
-// Metadata holds the metadata information for Kubernetes resources
-type Metadata struct {
-	Name      string `yaml:"name"`
-	Namespace string `yaml:"namespace"`
-}
-
 func main() {
 	// Define command-line flags
-	findPatterenPtr := flag.String("string", "", "Directory to scan for config and secret YAML files")
+	findPatterenPtr := flag.String("string", "", "String to search for in the deployed config and secret")
+	caseSensitivePtr := flag.Bool("casesensitive", false, "Enable case sensitive search")
 	verbosePtr := flag.Bool("verbose", false, "Enable verbose logging")
 	flag.Parse()
 
@@ -66,9 +36,9 @@ func main() {
 		return
 	}
 	findPatteren := *findPatterenPtr
-	findPatteren = strings.ToLower(findPatteren)
+	globalFound := false
 
-	log.Printf("Seaching >>%s<<", findPatteren)
+	log.Printf("Searching for >>%s<< (case sensitive: %t)", findPatteren, *caseSensitivePtr)
 
 	clientset, err := getKubernetesClient()
 	if err != nil {
@@ -78,35 +48,30 @@ func main() {
 	secrets := clientset.CoreV1().Secrets("")
 	secretList, err := secrets.List(context.Background(), metav1.ListOptions{})
 	if err != nil {
-		log.Fatalf("Failed to secretList secrets: %v", err)
+		log.Fatalf("Failed to list secrets: %v", err)
 	}
 	for _, item := range secretList.Items {
-		if strings.Contains(strings.ToLower(item.Name), findPatteren) {
+		if matches(item.Name, findPatteren, *caseSensitivePtr) {
 			log.Printf("Found secret with name: %s in namespace %s", item.Name, item.Namespace)
-
 		}
 
 		// log.Printf("Searchig secret in namespace: %s %s", item.Namespace, item.Name)
 		for name, stringdata := range item.StringData {
 			// log.Printf("Seaching secret in namespace: %s; Secret: %s - %s : %s", item.Namespace, item.Name, name, stringdata)
 
-			if strings.Contains(strings.ToLower(name), findPatteren) || strings.Contains(strings.ToLower(stringdata), findPatteren) {
+			if matches(name, findPatteren, *caseSensitivePtr) || matches(stringdata, findPatteren, *caseSensitivePtr) {
 				log.Printf("Found secret in namespace: %s; Secret: %s - %s : %s", item.Namespace, item.Name, name, stringdata)
+				globalFound = true
 			}
 		}
 		for name, stringdata := range item.Data {
-			str, v := safeConvert(stringdata)
-			if v == true {
-				//log.Printf("Seaching secret in namespace: %s; Secret: %s - %s : %s", item.Namespace, item.Name, name, str)
-
-				//println(strings.Contains(strings.ToLower(name), findPatteren))
-				//println(strings.Contains(strings.ToLower(str), findPatteren))
-
-				if strings.Contains(strings.ToLower(name), findPatteren) || strings.Contains(strings.ToLower(str), findPatteren) {
-					log.Printf("Found secret in namespace: %s; Secret: %s - %s : %s", item.Namespace, item.Name, name, string(stringdata))
+			str, valid := safeConvert(stringdata)
+			if valid {
+				if matches(name, findPatteren, *caseSensitivePtr) || matches(str, findPatteren, *caseSensitivePtr) {
+					log.Printf("Found secret in namespace: %s; Secret: %s - %s : %s", item.Namespace, item.Name, name, str)
+					globalFound = true
 				}
 			} else {
-				//log.Printf("Seaching secret in namespace: %s; Secret: %s - %s : %s", item.Namespace, item.Name, name, str)
 				if *verbosePtr {
 					log.Printf("Value could not be decoded: %s; Secret: %s - %s", item.Namespace, item.Name, name)
 				}
@@ -118,14 +83,24 @@ func main() {
 	configs := clientset.CoreV1().ConfigMaps("")
 	configMapList, err := configs.List(context.Background(), metav1.ListOptions{})
 	if err != nil {
-		log.Fatalf("Failed to configMapList secrets: %v", err)
+		log.Fatalf("Failed to list config maps: %v", err)
 	}
 	for _, item := range configMapList.Items {
 		for name, stringdata := range item.Data {
-			if strings.Contains(strings.ToLower(name), findPatteren) || strings.Contains(strings.ToLower(stringdata), findPatteren) {
+			if matches(name, findPatteren, *caseSensitivePtr) || matches(stringdata, findPatteren, *caseSensitivePtr) {
 				log.Printf("Found config in namespace: %s; %s : %s", item.Namespace, name, stringdata)
+				globalFound = true
 			}
 		}
+	}
+
+	// Set exit code based on whether any differences were found
+	if globalFound {
+		fmt.Println("Found some results.")
+		os.Exit(1) // Indicates failure due to differences
+	} else {
+		fmt.Println("Nothing found.")
+		os.Exit(0) // Indicates success
 	}
 }
 
@@ -155,7 +130,7 @@ func homeDir() string {
 	return os.Getenv("USERPROFILE") // Windows
 }
 
-const maxDataSize = 10000 // Set your maximum allowed data size in bytes
+const maxDataSize = 10000
 
 // safeConvert attempts to convert a byte slice to a string.
 // It returns the string and true if conversion is successful; otherwise, an empty string and false.
@@ -172,4 +147,14 @@ func safeConvert(data []byte) (string, bool) {
 	}
 	// Safe conversion to string.
 	return string(data), true
+}
+
+// matches compares the source string with the search pattern.
+// If caseSensitive is true, it compares the strings as-is;
+// otherwise, it performs a case-insensitive comparison.
+func matches(source, pattern string, caseSensitive bool) bool {
+	if caseSensitive {
+		return strings.Contains(source, pattern)
+	}
+	return strings.Contains(strings.ToLower(source), strings.ToLower(pattern))
 }
