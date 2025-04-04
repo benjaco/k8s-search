@@ -42,7 +42,7 @@ The **k8s-search** tool uses exit codes to indicate the result of the search:
 
 ## Install
 
-Download precompiled binaries for various platforms from the [releases page](benjaco/k8s-search/tags).
+Download precompiled binaries for various platforms from the [releases page](https://github.com/benjaco/k8s-search/tags).
 
 Alternatively, clone the repository and build the tool using Go:
 
